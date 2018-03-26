@@ -75,7 +75,7 @@ namespace EdjCase.JsonRpc.Router
 				}
 				else
 				{
-					if(!RpcPath.TryParse(context.HttpContext.Request.Path.Value, out requestPath))
+					if (!RpcPath.TryParse(context.HttpContext.Request.Path.Value, out requestPath))
 					{
 						this.logger?.LogInformation($"Could not parse the path '{context.HttpContext.Request.Path.Value}' for the " +
 							$"request into an rpc path. Skipping rpc router middleware.");
@@ -94,25 +94,36 @@ namespace EdjCase.JsonRpc.Router
 					return;
 				}
 				this.logger?.LogInformation($"Rpc request route '{requestPath}' matched.");
-
-				Stream contentStream = context.HttpContext.Request.Body;
-
+				
 				string jsonString;
-				if (contentStream == null)
+				if (context.HttpContext.Request.Body == null)
 				{
 					jsonString = null;
 				}
 				else
 				{
-					StreamReader streamReader = new StreamReader(contentStream);
-					jsonString = streamReader.ReadToEnd().Trim();
-					
+					using (StreamReader streamReader = new StreamReader(context.HttpContext.Request.Body, Encoding.UTF8,
+						detectEncodingFromByteOrderMarks: true,
+						bufferSize: 1024,
+						leaveOpen: true))
+					{
+						try
+						{
+							jsonString = await streamReader.ReadToEndAsync();
+						}
+						catch (TaskCanceledException ex)
+						{
+							throw new RpcCanceledRequestException("Cancelled while reading the request.", ex);
+						}
+						jsonString = jsonString.Trim();
+					}
+
 				}
 
 				var routeContext = DefaultRouteContext.FromHttpContext(context.HttpContext, this.routeProvider);
 				string responseJson = await this.routeHandler.HandleRequestAsync(requestPath, jsonString, routeContext);
 
-				if(responseJson == null)
+				if (responseJson == null)
 				{
 					//No response required
 					return;
